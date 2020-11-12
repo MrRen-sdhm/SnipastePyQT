@@ -19,15 +19,11 @@ python3 snipaste.py
 
 ```bash
 sudo chmod +x startup.sh
+sudo chmod a+x snipaste.desktop
+sudo cp snipaste.desktop /usr/share/applications
 cd ..
 sudo mv -r SnipastePyQT /opt
 ```
-
-
-
-## Auto Start
-
-Please use program auto startup manager in your system.
 
 
 

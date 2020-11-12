@@ -29,8 +29,8 @@ class GrabToolWindow(QWidget):
         self.endPoint = QPoint()
 
         self.hk_start, self.hk_stop = SystemHotkey(), SystemHotkey()  # 初始化两个热键
-        self.hk_start.register(('control', '1'), callback=lambda x: self.showMainWindow())
-        self.hk_stop.register(('control', 'shift', 'j'), callback=lambda x: self.showMainWindow())
+        self.hk_start.register(('control', '1'), callback=lambda x: self.showGrabWindow())
+        self.hk_stop.register(('control', 'shift', 'j'), callback=lambda x: self.showGrabWindow())
 
         self.sigDisplay.connect(self.createDisplayWin)  # 信号连接到子窗口创建函数
         self.displayWinDict = {}
@@ -48,7 +48,7 @@ class GrabToolWindow(QWidget):
         self.screenshot_full_screen = self.screenshotWindow.screenShot
         self.screenshotWindow.show()
 
-    def showMainWindow(self):
+    def showGrabWindow(self):
         self.sigScreenShot.emit()  # 创建并显示全屏截图窗口
         self.activateWindow() # 激活窗口以在最顶部显示
         self.setWindowState(Qt.WindowActive)  # 设置为激活窗口，以便使用快捷键
@@ -240,5 +240,5 @@ class ScreenshotWindow(QWidget):
 
 root = QApplication(sys.argv)
 app = GrabToolWindow()
-app.showMainWindow()
+# app.showGrabWindow()
 sys.exit(root.exec_())

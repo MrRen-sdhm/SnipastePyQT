@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Name=Snipaste
+GenericName[zh_CN]=snipaste
+Exec=/opt/SnipastePyQT/startup.sh
+Terminal=false
+Icon=/opt/SnipastePyQT/snipaste.ico
+Type=Application
+Categories=Development
+
