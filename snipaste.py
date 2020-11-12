@@ -1,17 +1,19 @@
 #coding:utf-8
 
-from PyQt5.QtWidgets import QApplication, QWidget, QDialog, QPushButton, QLabel, QGridLayout, QFileDialog, QFrame, QDesktopWidget
-from PyQt5.QtGui import QPixmap, QCursor, QBitmap, QPainter, QPen, QBrush
-from PyQt5.QtCore import Qt, QTimer, QRect, QPoint, QThread, pyqtSignal
 import sys
 from system_hotkey import SystemHotkey
+from PyQt5.QtWidgets import QApplication, QWidget, QDialog, QPushButton, QLabel, QGridLayout, QFileDialog, QFrame, QDesktopWidget
+from PyQt5.QtGui import QPixmap, QCursor, QBitmap, QPainter, QPen, QBrush, QPalette, QColor
+from PyQt5.QtCore import Qt, QTimer, QRect, QPoint, QThread, pyqtSignal
 
 
-class TakeScreenshotWindow(QWidget):
-    sig = pyqtSignal()
+class GrabToolWindow(QWidget):
+    """抓取工具窗口，显示在最前端"""
+    sigDisplay = pyqtSignal()  # 创建信号，用于新建贴图窗口
+    sigScreenShot = pyqtSignal()
 
     def __init__(self):
-        super(TakeScreenshotWindow, self).__init__()
+        super(GrabToolWindow, self).__init__()
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.SplashScreen)  # 无边框 置顶 不显示任务栏图标
         self.setStyleSheet('''background-color:black; ''')
         self.setWindowOpacity(0.3)
@@ -27,41 +29,55 @@ class TakeScreenshotWindow(QWidget):
         self.endPoint = QPoint()
 
         self.hk_start, self.hk_stop = SystemHotkey(), SystemHotkey()  # 初始化两个热键
-        # 绑定快捷键和对应的信号发送函数
-        self.hk_start.register(('control', '1'), callback=lambda x: self.send_key_event("snap1"))
-        self.hk_stop.register(('control', 'shift', 'j'), callback=lambda x: self.send_key_event("snap2"))
+        self.hk_start.register(('control', '1'), callback=lambda x: self.showMainWindow())
+        self.hk_stop.register(('control', 'shift', 'j'), callback=lambda x: self.showMainWindow())
 
-        self.sig.connect(self.create_chlid_win)
-        self.childWinDict = {}
-        self.childWinNum = 0
+        self.sigDisplay.connect(self.createDisplayWin)  # 信号连接到子窗口创建函数
+        self.displayWinDict = {}
+        self.displayWinNum = 0
 
-    def create_chlid_win(self):
-        self.childWinNum += 1
-        self.childWinDict[self.childWinNum] = DisplayWindow(self.screenshot, self.startPoint + self.availTopLeftPoint)
-        self.childWinDict[self.childWinNum].show()
+        self.sigScreenShot.connect(self.createScreenShotWin)
 
-    # 热键信号发送函数(将外部信号，转化成qt信号)
-    def send_key_event(self, i_str):
-        self.show()  # 显示截图窗口
+    def createDisplayWin(self):
+        self.displayWinDict[self.displayWinNum] = DisplayWindow(self.screenshot, self.startPoint + self.availTopLeftPoint, self.displayWinNum)
+        self.displayWinDict[self.displayWinNum].show()
+        self.displayWinNum += 1
+
+    def createScreenShotWin(self):
+        self.screenshotWindow = ScreenshotWindow()
+        self.screenshot_full_screen = self.screenshotWindow.screenShot
+        self.screenshotWindow.show()
+
+    def showMainWindow(self):
+        self.sigScreenShot.emit()  # 创建并显示全屏截图窗口
+        self.activateWindow() # 激活窗口以在最顶部显示
+        self.setWindowState(Qt.WindowActive)  # 设置为激活窗口，以便使用快捷键
+        self.show()  # 显示抓取窗口（主窗口）
+
+    def keyPressEvent(self, event):  # Alt+Q键或ESC关闭窗口退出程序
+        if event.key() == Qt.Key_Escape:
+            self.close(), exit(0)
+        elif event.key() == Qt.Key_Q:
+            if QApplication.keyboardModifiers() == Qt.AltModifier:
+                self.close(), exit(0)
+
+    def paintMask(self):
+        self.mask = self.blackMask.copy()
+        pp = QPainter(self.mask)
+        pen = QPen()
+        pen.setStyle(Qt.NoPen)
+        pp.setPen(pen)
+        brush = QBrush(Qt.white)
+        pp.setBrush(brush)
+        pp.drawRect(QRect(self.startPoint, self.endPoint))
+        self.setMask(QBitmap(self.mask))
+        self.update()
 
     def paintEvent(self, event):
         if self.isDrawing:
-            self.mask = self.blackMask.copy()
-            pp = QPainter(self.mask)
-            pen = QPen()
-            pen.setStyle(Qt.NoPen)
-            pp.setPen(pen)
-            brush = QBrush(Qt.white)
-            pp.setBrush(brush)
-            pp.drawRect(QRect(self.startPoint, self.endPoint))
-            self.setMask(QBitmap(self.mask))
-
-    def keyPressEvent(self, event):  # Q键关闭窗口
-        if event.key() == Qt.Key_F3:
-            self.show()
+            self.paintMask()
 
     def mousePressEvent(self, event):
-        print("press")
         if event.button() == Qt.LeftButton:
             self.isDrawing = True
             self.startPoint = event.pos()  # 相对有效区域左上角点的坐标
@@ -75,63 +91,92 @@ class TakeScreenshotWindow(QWidget):
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.LeftButton:
             self.endPoint = event.pos()
+            self.paintMask()  # 确保mask绘制完整
             self.isDrawing = False
 
-            if abs(self.endPoint.x() - self.startPoint.x()) > 10 and abs(self.endPoint.y() - self.startPoint.y()) > 10:  # 框选区域太小不进行截图
-                screenshot = QApplication.primaryScreen().grabWindow(QApplication.desktop().winId())  # 全屏截图
-                self.screenshot = screenshot.copy(QRect(self.startPoint + self.availTopLeftPoint, self.endPoint + self.availTopLeftPoint))
-                # self.screenshot.save('./test.jpg', format='JPG', quality=100)
+            if self.endPoint.x() - self.startPoint.x() > 10 and self.endPoint.y() - self.startPoint.y() > 10:  # 框选区域太小或从右至左框选不进行截图
+                self.screenshot = self.screenshot_full_screen.copy(QRect(self.startPoint, self.endPoint))  # 截取框选区域
+                self.hide() # 隐藏抓取工具窗口
+                self.screenshotWindow.close()  # 关闭全屏截图显示窗口
+                self.sigDisplay.emit()  # 触发信号创建新的子窗口来显示截图
 
-                self.hide() # 隐藏截图窗口
-                self.setMask(QBitmap((self.blackMask.copy())))  # 恢复窗口mask
-
-                # 在子窗口中显示截图
-                # app = DisplayWindow(self.screenshot, self.startPoint + self.availTopLeftPoint)
-                # # app.exec_()
-                # app.show()
-
-                self.sig.emit()  # 触发信号创建新的子窗口
+            self.setMask(QBitmap((self.blackMask.copy())))  # 框选操作结束, 恢复窗口mask
 
 
 class DisplayWindow(QWidget):
-    def __init__(self, screenshot=None, lefttop=None):
+    """贴图窗口"""
+    def __init__(self, screenshot, lefttop, num):
         super(DisplayWindow, self).__init__()
         self.screenshot = screenshot
         self.leftTop = lefttop
-        self.create_widgets()
+        self.num = num
 
-    def create_widgets(self):
-        self.widgets_created = True
-        self.img_preview = QLabel()
+        self.color_board = [QColor(0, 255, 255, 200),  # 浅蓝
+                            QColor(0, 255, 0, 200),    # 绿
+                            QColor(255, 255, 0, 200),  # 黄
+                            QColor(255, 0, 255, 200),  # 紫
+                            QColor(255, 0, 0, 200),    # 红
+                            QColor(0, 0, 255, 200), ]  # 蓝
+
+        self.createWindow()  # 利用窗口背景显示截图
+        # self.createWindowLabel()  # 利用label显示截图（位置不好控制）
+
+    def createWindow(self):
         self.move(self.leftTop)  # 移动到框选区域附近
-
-        print(self.img_preview.frameGeometry())
-        self.img_preview.setFrameShape(QFrame.Panel)  # Box Panel
-        self.img_preview.setFrameShadow(QFrame.Raised)  # Raised、Sunken、Plain
-        self.img_preview.setLineWidth(1)
-        self.img_preview.setStyleSheet('background-color: rgb(0, 255, 255, 100)')
-
-        self.img_preview.setPixmap(self.screenshot)
         self.resize(self.screenshot.width(), self.screenshot.height())
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen)  # 隐藏标题栏（无边框） 窗口置顶 隐藏任务栏图标
+
+        # 设置窗口背景为抓取的截图区域
+        palette = QPalette()
+        palette.setBrush(QPalette.Background, QBrush(QPixmap(self.screenshot)))
+        self.setPalette(palette)
+
+        self.activateWindow()  # 激活窗口以在最顶部显示
+        self.setWindowState(Qt.WindowActive)  # 设置为激活窗口以加深阴影显示效果
+
+    def paintEvent(self, event):  # 绘制边框
+        rect = QRect(QPoint(0,0), QPoint(self.width()-2, self.height()-2))
+        painter = QPainter(self)
+        painter.setPen(QPen(self.color_board[self.num % len(self.color_board)], 1, Qt.SolidLine))
+        painter.drawRect(rect)
+
+    def createWindowLabel(self):
+        color_board = ['background-color: rgb(0, 255, 255, 100)',  # 浅蓝
+                       'background-color: rgb(0, 255, 0, 100)',  # 绿
+                       'background-color: rgb(255, 255, 0, 100)',  # 黄
+                       'background-color: rgb(255, 0, 255, 100)',  # 紫
+                       'background-color: rgb(255, 0, 0, 100)',  # 红
+                       'background-color: rgb(0, 0, 255, 100)',  # 蓝
+                       ]
+        self.move(self.leftTop)  # 移动到框选区域附近
+        self.resize(self.screenshot.width(), self.screenshot.height())
+        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen)  # 隐藏标题栏（无边框） 窗口置顶 隐藏任务栏图标
+
+        # 利用label显示截图区域
         self.setAttribute(Qt.WA_TranslucentBackground)  # 设置背景透明
-
-        self.setWindowFlags(Qt.WindowStaysOnTopHint | Qt.FramelessWindowHint | Qt.SplashScreen)  # 隐藏标题栏 窗口置顶 隐藏任务栏图标
-        self.set_layout()
-
-
-    def set_layout(self):
+        self.imgLabel = QLabel()
+        self.imgLabel.setFrameShape(QFrame.Panel)  # Box Panel
+        self.imgLabel.setFrameShadow(QFrame.Raised)  # Raised、Sunken、Plain
+        self.imgLabel.setLineWidth(1)
+        self.imgLabel.setStyleSheet(color_board[self.num % len(color_board)])
+        self.imgLabel.setPixmap(self.screenshot)
         self.layout = QGridLayout(self)
-        self.layout.addWidget(self.img_preview)
+        self.layout.addWidget(self.imgLabel)
         self.setLayout(self.layout)
 
+        self.activateWindow()  # 激活窗口以在最顶部显示
+        self.setWindowState(Qt.WindowActive)  # 设置为激活窗口以便使用快捷键
+
     def save_screenshot(self):
-        img, _ = QFileDialog.getSaveFileName(self,"Salvar Arquivo", filter="PNG(*.png);; JPEG(*.jpg)")
+        img, formate = QFileDialog.getSaveFileName(self,"Salvar Arquivo", filter="PNG(*.png);; JPEG(*.jpg)")
         if img[-3:] == "png":
-            self.screenshot.save(img, "png")
+            self.screenshot.save(img, "png", quality=100)
         elif img[-3:] == "jpg":
-            self.screenshot.save(img, "jpg")
-        else:
-            self.screenshot.save(img + ".png", "png")
+            self.screenshot.save(img, "jpg", quality=100)
+        elif formate == "PNG(*.png)":
+            self.screenshot.save(img + ".png", "png", quality=100)
+        elif formate == "JPEG(*.jpg)":
+            self.screenshot.save(img + ".jpg", "jpg", quality=100)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.LeftButton:
@@ -150,18 +195,50 @@ class DisplayWindow(QWidget):
             self.m_drag = False
             self.setCursor(QCursor(Qt.ArrowCursor))
 
-    def keyPressEvent(self, event):  # Q键关闭窗口
+    def keyPressEvent(self, event):
         if event.key() == Qt.Key_Q:
-            self.close()
+            if QApplication.keyboardModifiers() == Qt.AltModifier:  # Alt+Q退出程序
+                exit(0)
+            else: # Q键关闭窗口
+                self.close()
         elif event.key() == Qt.Key_S:
             self.save_screenshot()
+
 
     def mouseDoubleClickEvent(self, event):  # 双击关闭窗口
         if event.button() == Qt.LeftButton:
             self.close()
 
 
+class ScreenshotWindow(QWidget):
+    """全屏截图窗口，抓取全屏截图（显示在截图工具窗口下面）"""
+    def __init__(self):
+        super(ScreenshotWindow, self).__init__()
+        availTopLeftPoint = QDesktopWidget().availableGeometry().topLeft()  # 有效显示区域左上角点
+        availBottomRightPoint = QDesktopWidget().availableGeometry().bottomRight()  # 有效显示区域左上角点
+        self.screenshot = QApplication.primaryScreen().grabWindow(QApplication.desktop().winId())  # 全屏截图
+        self.screenshot = self.screenshot.copy(QRect(availTopLeftPoint, availBottomRightPoint))  # 获取有效区域截图
+        self.resize(self.screenshot.width(), self.screenshot.height())
+
+        # 设置窗口背景为截图
+        palette = QPalette()
+        palette.setBrush(QPalette.Background, QBrush(QPixmap(self.screenshot)))
+        self.setPalette(palette)
+
+        # self.setWindowFlags(Qt.WindowStaysOnTopHint )
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.SplashScreen)
+        # self.showFullScreen()
+
+    def mouseDoubleClickEvent(self, event):  # 双击关闭窗口
+        if event.button() == Qt.LeftButton:
+            self.close()
+
+    @property
+    def screenShot(self):
+        return self.screenshot
+
+
 root = QApplication(sys.argv)
-app = TakeScreenshotWindow()
-app.show()
+app = GrabToolWindow()
+app.showMainWindow()
 sys.exit(root.exec_())
