@@ -38,7 +38,7 @@ class GrabToolWindow(QWidget):
 
         self.sigScreenShot.connect(self.createScreenShotWin)
 
-    def createDisplayWin(self):
+    def createDisplayWin(self):  # 这里使用字典存储新建的窗口，当窗口关闭时未进行内存释放，可进行优化
         self.displayWinDict[self.displayWinNum] = DisplayWindow(self.screenshot, self.startPoint + self.availTopLeftPoint, self.displayWinNum)
         self.displayWinDict[self.displayWinNum].show()
         self.displayWinNum += 1
@@ -110,6 +110,7 @@ class DisplayWindow(QWidget):
         self.screenshot = screenshot
         self.leftTop = lefttop
         self.num = num
+        self.isopen = True
 
         self.color_board = [QColor(0, 255, 255, 200),  # 浅蓝
                             QColor(0, 255, 0, 200),    # 绿
@@ -201,13 +202,17 @@ class DisplayWindow(QWidget):
                 exit(0)
             else: # Q键关闭窗口
                 self.close()
+                self.isopen = False  # 窗口关闭
         elif event.key() == Qt.Key_S:
             self.save_screenshot()
-
 
     def mouseDoubleClickEvent(self, event):  # 双击关闭窗口
         if event.button() == Qt.LeftButton:
             self.close()
+            self.isopen = False  # 窗口关闭
+
+    def isOpen(self):
+        return self.isopen
 
 
 class ScreenshotWindow(QWidget):
@@ -225,9 +230,7 @@ class ScreenshotWindow(QWidget):
         palette.setBrush(QPalette.Background, QBrush(QPixmap(self.screenshot)))
         self.setPalette(palette)
 
-        # self.setWindowFlags(Qt.WindowStaysOnTopHint )
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.SplashScreen)
-        # self.showFullScreen()
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.SplashScreen)  # Qt.WindowStaysOnTopHint
 
     def mouseDoubleClickEvent(self, event):  # 双击关闭窗口
         if event.button() == Qt.LeftButton:
