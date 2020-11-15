@@ -28,9 +28,9 @@ class GrabToolWindow(QWidget):
         self.startPoint = QPoint()
         self.endPoint = QPoint()
 
-        self.hk_start, self.hk_stop = SystemHotkey(), SystemHotkey()  # 初始化两个热键
-        self.hk_start.register(('control', '1'), callback=lambda x: self.showGrabWindow())
-        self.hk_stop.register(('control', 'shift', 'j'), callback=lambda x: self.showGrabWindow())
+        self.hk1, self.hk2 = SystemHotkey(), SystemHotkey()  # 初始化两个热键
+        # self.hk1.register(('control', '1'), callback=lambda x: self.showGrabWindow())
+        self.hk2.register(('control', 'shift', 'j'), callback=lambda x: self.showGrabWindow())
 
         self.sigDisplay.connect(self.createDisplayWin)  # 信号连接到子窗口创建函数
         self.displayWinDict = {}
@@ -54,12 +54,15 @@ class GrabToolWindow(QWidget):
         self.setWindowState(Qt.WindowActive)  # 设置为激活窗口，以便使用快捷键
         self.show()  # 显示抓取窗口（主窗口）
 
-    def keyPressEvent(self, event):  # Alt+Q键或ESC关闭窗口退出程序
+    def keyPressEvent(self, event):  # Alt+Q键或ESC关闭窗口退出程序, Q键隐藏抓取窗口
         if event.key() == Qt.Key_Escape:
             self.close(), exit(0)
         elif event.key() == Qt.Key_Q:
             if QApplication.keyboardModifiers() == Qt.AltModifier:
                 self.close(), exit(0)
+            else:
+                self.hide()
+                self.screenshotWindow.hide()
 
     def paintMask(self):
         self.mask = self.blackMask.copy()
